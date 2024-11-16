@@ -1,0 +1,402 @@
+name: Build Package
+
+# Controls when the workflow will run
+on:
+  repository_dispatch:
+    types:
+      - biglinux/*
+      - AUR/*
+      - xivastudio/*
+      - URL/*
+      - BigLinuxAur/*
+
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'With TMATE'
+        required: false
+        default: true
+
+env:
+  gpg_key: ${{ secrets.GPG_PRIVATE_KEY }}
+  gpg_passphrase: ${{ secrets.PASSPHRASE }}
+  repo_mirror: ${{ secrets.REPO_MIRROR }}
+  repo_dev: ${{ secrets.REPO_UNSTABLE }}
+  mirror_unstable: ${{ secrets.MIRROR_UNSTABLE }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: xivastudio/biglinux_build_package:latest
+      options: --privileged
+      volumes:
+        - /opt:/lixo/opt
+        - /usr:/lixo/usr
+        - /var:/lixo/var
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set ENVs
+        shell: bash
+        run: |
+          # Set ENVs
+          if [ -n "${{ github.event.client_payload.url }}" ];then
+            echo "url=${{ github.event.client_payload.url }}" >> $GITHUB_ENV
+          fi
+          if [ -n "${{ github.event.client_payload.branch }}" ];then
+            echo "git_branch=${{ github.event.client_payload.branch }}" >> $GITHUB_ENV
+          fi
+          if [ -n "${{ github.event.client_payload.extrarepo }}" ];then
+            echo "extrarepo=${{ github.event.client_payload.extrarepo }}" >> $GITHUB_ENV
+          fi
+          if [ -n "${{ github.event.client_payload.extrapackage }}" ];then
+            echo "extrapackage=${{ github.event.client_payload.extrapackage }}" >> $GITHUB_ENV
+          fi
+          if [ -z "${{ github.event.client_payload.manjaro_branch }}" ];then
+            echo "manjaro_branch=stable" >> $GITHUB_ENV
+          else
+            echo "manjaro_branch=${{ github.event.client_payload.manjaro_branch }}" >> $GITHUB_ENV
+          fi
+          
+      - name: echo PayLoads
+        shell: bash
+        run: |
+          # echo PayLoads
+          echo "url: $url"
+          echo "git_branch: $git_branch"
+          echo "manjaro_branch: $manjaro_branch"
+          
+      - name: Clean System
+        shell: bash -O extglob {0}
+        if: |
+          contains(github.event.client_payload.url, '/piper-voices') ||
+          !contains(github.event.client_payload.url, 'biglinux/') &&
+          !contains(github.event.client_payload.url, 'xivastudio/')
+        run: |
+          # Clean System
+          df -h
+          docker image prune --all --force
+          rm -rf \
+          /lixo/opt/google \
+          /lixo/opt/pipx \
+          /lixo/opt/microsoft \
+          /lixo/opt/az \
+          /lixo/opt/hostedtoolcache \
+          /lixo/usr/local/.ghcup \
+          /lixo/usr/share/dotnet \
+          /lixo/usr/share/swift \
+          /lixo/usr/share/dotnet \
+          /lixo/usr/share/miniconda \
+          /lixo/usr/local/lib/android \
+          /lixo/usr/local/lib/node_modules \
+          /lixo/usr/lib/snapd \
+          /lixo/usr/lib/modules \
+          /lixo/usr/lib/python3 \
+          /lixo/usr/lib/firefox \
+          /lixo/usr/lib/heroku \
+          /lixo/usr/lib/mono \
+          /lixo/usr/lib/llvm-13 \
+          /lixo/usr/lib/llvm-14 \
+          /lixo/usr/lib/llvm-15 \
+          /lixo/usr/lib/gcc \
+          /lixo/usr/lib/google-cloud-sdk \
+          /lixo/usr/lib/jvm \
+          /lixo/usr/local/doc \
+          /lixo/usr/local/sqlpackage \
+          /lixo/usr/local/n \
+          /lixo/usr/local/aws-sam-cli \
+          /lixo/usr/local/aws-cli \
+          /lixo/usr/local/julia1.10.3 \
+          /lixo/usr/local/share/vcpkg \
+          /lixo/usr/local/share/chromium \
+          /lixo/usr/local/share/powershell
+          df -h
+
+      - name: Changes in System
+        shell: bash #-O extglob {0}
+        run: |
+          # Changes in System
+          # pacman.conf
+          echo 'Server = https://nnenix.mm.fcix.net/manjaro/stable/$repo/$arch' | tee /etc/pacman.d/mirrorlist
+          sed -i '/biglinux/,$d' /etc/pacman.conf
+          sed -i '/\[core\]/{h;s/.*/\[biglinux-update-stable\]/;p;x;}' /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          sed -i '/\[core\]/{h;s/.*/SigLevel = PackageRequired/;p;x;}' /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          sed -i '/\[core\]/{h;s/.*/Server = https:\/\/repo.biglinux.com.br\/update-stable\/$arch/;p;x;}' /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          sed -i '/\[core\]/{h;s/.*//;p;x;}' /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          echo '
+          [bigiborg-'"${repo_dev}"']
+          SigLevel = PackageRequired
+          Server = https://'"$mirror_unstable"'/$arch' | tee -a /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          echo '
+          [biglinux-testing]
+          SigLevel = PackageRequired
+          Server = https://'"$repo_mirror"'.biglinux.com.br/testing/$arch' | tee -a /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+          echo '
+          [biglinux-stable]
+          SigLevel = PackageRequired
+          Server = https://'"$repo_mirror"'.biglinux.com.br/stable/$arch' | tee -a /etc/pacman.conf /etc/chrootbuild/pacman.conf.x86_64 #/usr/share/manjaro-arm-tools/lib/pacman.conf.aarch64
+
+          # # makepkg
+          sed -i '/PACKAGER=/s/.*/\PACKAGER="BigLinux Package Build <bigbruno@gmail.com>\"/' /etc/makepkg.conf
+          sed -i '/MAKEFLAGS=/s/.*/MAKEFLAGS="-j'$(nproc)'"/' /etc/makepkg.conf
+
+          # Changes in manjaro-chrootbuild
+          sed -i 's|https://repo.manjaro.org/repo|https://nnenix.mm.fcix.net/manjaro|' /usr/lib/manjaro-chrootbuild/util.sh
+          sed -i '/-Syy/s/-Syy/-Syy git /' /usr/lib/manjaro-chrootbuild/util-chroot.sh
+
+          # to ARM
+          # sed -i 's/base-devel/base-devel git/' /usr/share/manjaro-arm-tools/lib/functions.sh
+          # sudo sed -i -e 's|1>/dev/null||g' /usr/share/manjaro-arm-tools/lib/functions.sh
+          # sudo sed -i -e 's|1> /dev/null 2>&1||g' /usr/share/manjaro-arm-tools/lib/functions.sh
+          # sudo sed -i -e 's|2>/dev/null||g' /usr/share/manjaro-arm-tools/lib/functions.sh
+
+          # #add repo to rootfs
+          # sed -i '/mv -f $LIBDIR\/pacman.conf.$ARCH.backup $LIBDIR\/pacman.conf.$ARCH/{p;s/.*/sudo cp -a $LIBDIR\/pacman.conf.$ARCH $CHROOTDIR\/etc\/pacman.conf/;}' /usr/share/manjaro-arm-tools/lib/functions.sh
+
+          # Add "Daniel M. Capella" KEY
+          sudo pacman-key --recv-keys EA4F7B321A906AD9
+          # sudo pacman-key --recv-keys 29C71CE912B57264
+
+        ## Tmate ##
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        # timeout-minutes: 60
+        with:
+          install-dependencies: false
+
+      - name: Download Source
+        # if: ${{ !inputs.debug_enabled }}
+        shell: bash
+        run: |
+          git clone $url.git
+
+      - name: Build
+        shell: bash #-O extglob {0}
+        run: |
+          # Create User
+          useradd builduser -m
+          passwd -d builduser
+          printf 'builduser ALL=(ALL) ALL\n' | tee -a /etc/sudoers
+          
+          # Build
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          
+          # CheckOut
+          if [ -n "$(grep https://github.com/biglinux/ <<< $url)" ]; then
+            git checkout $git_branch
+            sed -i '/source=/s/\.git"/\.git#branch='$git_branch'"/' PKGBUILD
+          fi
+          
+          # Set Arch
+          pkgArch=$(grep -E "\barch=" PKGBUILD | cut -d "=" -f2 | tr -cd '[:alnum:]_' | head -n1)
+          if [ "$pkgArch" = "any" ];then
+            sed -i "/\barch=/s/arch=.*/arch=('x86_64' 'aarch64')/" PKGBUILD
+          fi
+          
+          # Build x86_64
+          if [ -n "$(sed -n '/\barch=/p' PKGBUILD | grep x86_64)" ];then
+            echo -e "\033[01;31mBuild x86_64\033[0m"
+            sudo -u builduser bash -c "sudo chrootbuild -H -p . -b $manjaro_branch"
+          fi
+          
+          # # Build aarch64
+          # if [ -n "$(sed -n '/\barch=/p' PKGBUILD | grep aarch64)" ];then
+          #   echo -e "\033[01;31mBuild aarch64\033[0m"
+          #   sudo -u builduser bash -c "sudo buildarmpkg -p . -b $manjaro_branch"
+          # fi
+
+      - name: Rename Package
+        shell: bash -O extglob {0}
+        run: |
+          # Rename Package
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          for i in *.zst; do
+            if [ -n "$(ls $i | grep :)" ]; then
+              mv $i $(echo $i | sed 's/:/-/')
+            fi
+          done
+
+      - name: Sign Package
+        shell: bash -O extglob {0}
+        run: |
+          # Sign Package
+          cat <(echo -e "$gpg_key") | gpg --batch --import &>/dev/null
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          for p in $(find $PWD -maxdepth 1 -regex '.*\.pkg\.tar\.\(xz\|zst\)'); do
+            gpg --pinentry-mode loopback --passphrase "$gpg_passphrase" --detach-sign ${p}
+          done
+
+      - name: CheckSum
+        shell: bash -O extglob {0}
+        run: |
+          # CheckSum
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          echo '#!/bin/bash
+          for i in $(ls *.zst); do md5sum $i >> $i.md5; done
+          for i in $(ls *.sig | sed 's/.sig//'); do md5sum $i.sig >> $i.md5; done
+          exit 0' > md5.sh
+          bash md5.sh
+          rm md5.sh
+
+      # ## Tmate ##
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+      #   # timeout-minutes: 60
+      #   with:
+      #     install-dependencies: false
+
+      - name: Publish Package on GitHub
+        shell: bash #-O extglob {0}
+        run: |
+          # Publish Package on GitHub
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          ls -lh
+          
+          if [ -n "$(grep linux-zen <<< $gitfolder)" ];then
+            exit 0
+          fi
+          
+          # who last commit
+          lastCommit=$(git log -1 --format="%an <%ae>")
+          if [ "$(grep github-actions <<< $lastCommit)" ];then
+            lastCommit=$(git log -2 --format="%an <%ae>")
+          fi
+          if [ -n "$(grep -Ei "catafesta|tales" <<< $lastCommit)" ];then
+            exit 0
+          fi
+
+          echo "If repos"
+          # Se for repo stable mandar release para o github do biglinux, se for testing ou development mandar para o release do package-build
+          if [ -n "$(grep -i biglinux <<< $url)" -o -n "$(grep -i xivastudio <<< $url)" ];then
+            echo "1"
+            if [ -n "$(grep stable <<< $git_branch)" -o -n "$(grep xanmod <<< $url)" ];then
+              echo "2"
+              echo ${{ secrets.TOKEN_RELEASE }} | gh auth login --with-token
+              repo=$(sed 's|https://github.com/||' <<< $url)
+            else
+              echo "3"
+              echo ${{ github.token }} | gh auth login --with-token
+              repo=${{ github.repository }}
+            fi
+          else
+            echo "4"
+            echo ${{ github.token }} | gh auth login --with-token
+            repo=${{ github.repository }}
+          fi
+          echo "5"
+          
+          # Release
+          # if [ -z "$pkgver" ];then
+          #   pkgName=$(basename "$url" | head -n1)
+          #   # pkgArch=$(grep -E "\barch=" PKGBUILD | cut -d "=" -f2 | tr -cd '[:alnum:]_' | head -n1)
+          #   pkgFile=$(ls *.pkg.tar.zst | head -n1 | sed 's/.pkg.tar.zst//')
+          #   pkgver=${pkgFile//$pkgName/}
+          #   # pkgver=${pkgver//$pkgArch/}
+          #   pkgver=${pkgver//--/-}
+          #   pkgver=${pkgver#-}
+          #   pkgver=${pkgver%-}
+          # fi
+          # release=$(basename "$url")-$pkgver
+          echo "6"
+          # Release
+          # release=$(ls *.pkg* | head -n1 | sed 's/.pkg.*//')
+          ls *.pkg* | head -n1 | sed 's/.pkg.*//' > release
+          echo "cat release"
+          cat release
+          release=$(cat release)
+          
+          echo "ECHOs"
+          echo "release=$release"
+          echo "repo=$repo"
+          echo "url=$url"
+          
+          echo "gh release create"
+          gh release create ${release} --title ${release} --repo ${repo} --notes "automated release from $url" || echo "release already exists"
+          echo "gh release upload"
+          for i in .zst .sig .tar .md5; do
+            find -iname "*$i" -exec gh release upload ${release} --repo ${repo} --clobber {} \;
+          done
+
+      - name: Push to Repo
+        shell: bash
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          echo "## ssh setup"
+          mkdir -p /root/.ssh
+          > /root/.ssh/github_actions
+          chmod 600 /root/.ssh/github_actions
+          echo "${{ secrets.PKGBUILD_KEY }}" >> /root/.ssh/github_actions
+          eval `ssh-agent -s`
+          ssh-add /root/.ssh/github_actions
+          ssh-keyscan -t rsa -p ${{ secrets.PKGBUILD_PORT }} ${{ secrets.PKGBUILD_HOST }} >> /root/.ssh/known_hosts
+          ip=${{ secrets.PKGBUILD_HOST }}
+          # ip=$(ssh ${{ secrets.PKGBUILD_USER }}@${{ secrets.PKGBUILD_HOST }} -p ${{ secrets.PKGBUILD_PORT }} 'echo $(curl -s ident.me) | tail -n1')
+          # ssh-keyscan -t rsa -p ${{ secrets.PKGBUILD_PORT }} $ip >> /root/.ssh/known_hosts
+          
+          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+          cd $gitfolder
+          ls -lh
+
+          # who last commit
+          lastCommit=$(git log -1 --format="%an <%ae>")
+          if [ "$(grep github-actions <<< $lastCommit)" ];then
+            lastCommit=$(git log -2 --format="%an <%ae>")
+          fi
+          echo "lastCommit=$lastCommit"
+          # set branch to send package
+          if [ -n "$(grep -i "catafesta" <<< $lastCommit)" ];then
+            branch=cypher
+          elif [ -n "$(grep testing <<< $manjaro_branch)" -o -n "$(grep manjaro-testing <<< $git_branch)" ]; then
+            branch=manjaro-testing
+            echo "1"
+          elif [ -n "$(echo $url | grep xanmod | grep -v x64v)" ]; then
+            branch=${{ secrets.REPO_UNSTABLE }}
+            echo "3"
+          elif [ -n "$(grep update-stable <<< $git_branch)" ]; then
+            branch=update-stable
+            echo "4"
+          elif [ -n "$(grep update-testing <<< $git_branch)" ]; then
+            branch=update-testing
+            echo "5"
+          elif [ -n "$(grep unstable <<< $git_branch)" -o -n "$(grep development <<< $git_branch)" ];then
+            branch=${{ secrets.REPO_UNSTABLE }}
+            echo "6"
+          elif [ -n "$(grep testing <<< $git_branch)" ];then
+            branch=testing
+            echo "7"
+          elif [ -n "$(grep stable <<< $git_branch)" ];then
+            branch=stable
+            echo "8"
+          elif [ -n "$(grep main <<< $git_branch)" -a -n "$(grep -Ei "talesam" <<< $lastCommit)" ];then
+            branch=cypher
+          else
+            branch=${{ secrets.REPO_UNSTABLE }}
+            echo "9"
+          fi
+          for i in *.zst *.sig *.md5; do
+            test -e $i && rsync -vapz -e "ssh -p ${{ secrets.PKGBUILD_PORT }}" $i ${{ secrets.PKGBUILD_USER }}@$ip:${{ secrets.PKGBUILD_DIR }}/$branch/x86_64
+            sleep 10
+          done
+
+#       # Tmate ##
+#       - name: Setup tmate session
+#         uses: mxschmitt/action-tmate@v3
+#         if: ${{ failure() }}
+#         with:
+#           install-dependencies: false
+
+      - name: Telegram Alert Fail
+        # if: ${{ failure() || cancelled() }}
+        if: ${{ failure() }}
+        run: |
+          curl -X POST -H 'Content-Type: application/json' -d '{"chat_id": "${{ secrets.CHAT_ID }}", "text": "🚨 FALHA ao criar Pacote: ${{ github.event.action }} a partir do branch ${{ github.ref_name }}, link do erro: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} 🖥", "disable_notification": false}' ${{ secrets.MESSAGE_BOT_KEY }}
