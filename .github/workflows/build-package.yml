@@ -252,78 +252,78 @@ jobs:
       #   with:
       #     install-dependencies: false
 
-      - name: Publish Package on GitHub
-        shell: bash #-O extglob {0}
-        run: |
-          # Publish Package on GitHub
-          gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
-          cd $gitfolder
-          ls -lh
-          
-          if [ -n "$(grep linux-zen <<< $gitfolder)" ];then
-            exit 0
-          fi
-          
-          # who last commit
-          lastCommit=$(git log -1 --format="%an <%ae>")
-          if [ "$(grep github-actions <<< $lastCommit)" ];then
-            lastCommit=$(git log -2 --format="%an <%ae>")
-          fi
-          if [ -n "$(grep -Ei "catafesta|tales" <<< $lastCommit)" ];then
-            exit 0
-          fi
-
-          echo "If repos"
-          # Se for repo stable mandar release para o github do biglinux, se for testing ou development mandar para o release do package-build
-          if [ -n "$(grep -i biglinux <<< $url)" -o -n "$(grep -i xivastudio <<< $url)" ];then
-            echo "1"
-            if [ -n "$(grep stable <<< $git_branch)" -o -n "$(grep xanmod <<< $url)" ];then
-              echo "2"
-              echo ${{ secrets.TOKEN_RELEASE }} | gh auth login --with-token
-              repo=$(sed 's|https://github.com/||' <<< $url)
-            else
-              echo "3"
-              echo ${{ github.token }} | gh auth login --with-token
-              repo=${{ github.repository }}
-            fi
-          else
-            echo "4"
-            echo ${{ github.token }} | gh auth login --with-token
-            repo=${{ github.repository }}
-          fi
-          echo "5"
-          
-          # Release
-          # if [ -z "$pkgver" ];then
-          #   pkgName=$(basename "$url" | head -n1)
-          #   # pkgArch=$(grep -E "\barch=" PKGBUILD | cut -d "=" -f2 | tr -cd '[:alnum:]_' | head -n1)
-          #   pkgFile=$(ls *.pkg.tar.zst | head -n1 | sed 's/.pkg.tar.zst//')
-          #   pkgver=${pkgFile//$pkgName/}
-          #   # pkgver=${pkgver//$pkgArch/}
-          #   pkgver=${pkgver//--/-}
-          #   pkgver=${pkgver#-}
-          #   pkgver=${pkgver%-}
-          # fi
-          # release=$(basename "$url")-$pkgver
-          echo "6"
-          # Release
-          # release=$(ls *.pkg* | head -n1 | sed 's/.pkg.*//')
-          ls *.pkg* | head -n1 | sed 's/.pkg.*//' > release
-          echo "cat release"
-          cat release
-          release=$(cat release)
-          
-          echo "ECHOs"
-          echo "release=$release"
-          echo "repo=$repo"
-          echo "url=$url"
-          
-          echo "gh release create"
-          gh release create ${release} --title ${release} --repo ${repo} --notes "automated release from $url" || echo "release already exists"
-          echo "gh release upload"
-          for i in .zst .sig .tar .md5; do
-            find -iname "*$i" -exec gh release upload ${release} --repo ${repo} --clobber {} \;
-          done
+#       - name: Publish Package on GitHub
+#         shell: bash #-O extglob {0}
+#         run: |
+#           # Publish Package on GitHub
+#           gitfolder=$(find -type f -name PKGBUILD | sed 's/PKGBUILD//')
+#           cd $gitfolder
+#           ls -lh
+#
+#           if [ -n "$(grep linux-zen <<< $gitfolder)" ];then
+#             exit 0
+#           fi
+#
+#           # who last commit
+#           lastCommit=$(git log -1 --format="%an <%ae>")
+#           if [ "$(grep github-actions <<< $lastCommit)" ];then
+#             lastCommit=$(git log -2 --format="%an <%ae>")
+#           fi
+#           if [ -n "$(grep -Ei "catafesta|tales" <<< $lastCommit)" ];then
+#             exit 0
+#           fi
+#
+#           echo "If repos"
+#           # Se for repo stable mandar release para o github do biglinux, se for testing ou development mandar para o release do package-build
+#           if [ -n "$(grep -i biglinux <<< $url)" -o -n "$(grep -i xivastudio <<< $url)" ];then
+#             echo "1"
+#             if [ -n "$(grep stable <<< $git_branch)" -o -n "$(grep xanmod <<< $url)" ];then
+#               echo "2"
+#               echo ${{ secrets.TOKEN_RELEASE }} | gh auth login --with-token
+#               repo=$(sed 's|https://github.com/||' <<< $url)
+#             else
+#               echo "3"
+#               echo ${{ github.token }} | gh auth login --with-token
+#               repo=${{ github.repository }}
+#             fi
+#           else
+#             echo "4"
+#             echo ${{ github.token }} | gh auth login --with-token
+#             repo=${{ github.repository }}
+#           fi
+#           echo "5"
+#
+#           # Release
+#           # if [ -z "$pkgver" ];then
+#           #   pkgName=$(basename "$url" | head -n1)
+#           #   # pkgArch=$(grep -E "\barch=" PKGBUILD | cut -d "=" -f2 | tr -cd '[:alnum:]_' | head -n1)
+#           #   pkgFile=$(ls *.pkg.tar.zst | head -n1 | sed 's/.pkg.tar.zst//')
+#           #   pkgver=${pkgFile//$pkgName/}
+#           #   # pkgver=${pkgver//$pkgArch/}
+#           #   pkgver=${pkgver//--/-}
+#           #   pkgver=${pkgver#-}
+#           #   pkgver=${pkgver%-}
+#           # fi
+#           # release=$(basename "$url")-$pkgver
+#           echo "6"
+#           # Release
+#           # release=$(ls *.pkg* | head -n1 | sed 's/.pkg.*//')
+#           ls *.pkg* | head -n1 | sed 's/.pkg.*//' > release
+#           echo "cat release"
+#           cat release
+#           release=$(cat release)
+#
+#           echo "ECHOs"
+#           echo "release=$release"
+#           echo "repo=$repo"
+#           echo "url=$url"
+#
+#           echo "gh release create"
+#           gh release create ${release} --title ${release} --repo ${repo} --notes "automated release from $url" || echo "release already exists"
+#           echo "gh release upload"
+#           for i in .zst .sig .tar .md5; do
+#             find -iname "*$i" -exec gh release upload ${release} --repo ${repo} --clobber {} \;
+#           done
 
       - name: Push to Repo
         shell: bash
