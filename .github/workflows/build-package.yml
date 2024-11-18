@@ -66,6 +66,7 @@ jobs:
           echo "url: $url"
           echo "git_branch: $git_branch"
           echo "manjaro_branch: $manjaro_branch"
+          echo "send by: ${{ github.event.client_payload.user }}"
           
       - name: Clean System
         shell: bash -O extglob {0}
